@@ -71,6 +71,34 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="get_zotero_papers",
+            description="[PRO] Search and retrieve metadata/notes from your personal Zotero library. Requires Zotero API configuration.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search term within your Zotero library",
+                    },
+                },
+                "required": ["query"],
+            },
+        ),
+        Tool(
+            name="read_arxiv_pdf",
+            description="[PRO] Download and read the full text of an ArXiv paper using its PDF URL or ID. Best for deep analysis beyond abstracts.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "url_or_id": {
+                        "type": "string",
+                        "description": "ArXiv PDF URL (e.g. https://arxiv.org/pdf/2308.07901.pdf) or ID (2308.07901)",
+                    },
+                },
+                "required": ["url_or_id"],
+            },
+        ),
+        Tool(
             name="verify_citation",
             description="[PRO] Verify academic citations and check if claims are supported by sources. Requires License Key.",
             inputSchema={
@@ -110,31 +138,61 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent | ImageCo
     if name != "search_papers" and not is_pro:
         return [TextContent(type="text", text=f"⚠️ **PRO Feature Locked**\n\n'{name}' requires a Cite-Agent Pro license.\n\n👉 **Get your key here:** https://gumroad.com/l/{GUMROAD_PRODUCT_PERMALINK}\n\nSet the CITE_AGENT_API_KEY environment variable to unlock.")]
 
-    # 2. Logic Implementation (Wraps cite-agent CLI)
+    # 2. Logic Implementation
     try:
         if name == "search_papers":
             query = arguments["query"]
             max_results = arguments.get("max_results", 10)
             if not is_pro:
-                max_results = min(max_results, 5) # Capped for free
-            
+                max_results = min(max_results, 5) 
             cmd = ["cite-agent", f"Find academic papers on: {query}. Show {max_results} results."]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            return [TextContent(type="text", text=result.stdout)]
+
+        elif name == "get_zotero_papers":
+            # This requires pyzotero and ZOTERO_API_KEY / ZOTERO_USER_ID
+            try:
+                from pyzotero import zotero
+                zot = zotero.Zotero(os.getenv("ZOTERO_USER_ID"), 'user', os.getenv("ZOTERO_API_KEY"))
+                items = zot.top(q=arguments["query"])
+                return [TextContent(type="text", text=json.dumps(items, indent=2))]
+            except Exception as e:
+                return [TextContent(type="text", text=f"❌ Zotero Error: {str(e)}. Ensure ZOTERO_USER_ID and ZOTERO_API_KEY are set.")]
+
+        elif name == "read_arxiv_pdf":
+            # This requires PyPDF2 and httpx
+            import io
+            from PyPDF2 import PdfReader
+            url = arguments["url_or_id"]
+            if not url.startswith("http"):
+                url = f"https://arxiv.org/pdf/{url}.pdf"
             
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(url, timeout=30.0)
+                if resp.status_code != 200:
+                    return [TextContent(type="text", text=f"❌ Failed to download PDF: {resp.status_code}")]
+                
+                f = io.BytesIO(resp.content)
+                reader = PdfReader(f)
+                text = ""
+                # Extract first 10 pages to avoid context window blowup
+                for i in range(min(10, len(reader.pages))):
+                    text += reader.pages[i].extract_text()
+                
+                return [TextContent(type="text", text=f"📄 **Full Text (First 10 pages)**\n\n{text[:15000]}...")]
+
         elif name == "verify_citation":
             cmd = ["cite-agent", f"Verify this citation: {arguments['citation']}"]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            return [TextContent(type="text", text=result.stdout)]
             
         elif name == "get_financial_data":
             cmd = ["cite-agent", arguments["query"]]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            return [TextContent(type="text", text=result.stdout)]
             
         else:
             raise ValueError(f"Unknown tool: {name}")
-
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-        
-        if result.returncode != 0:
-            return [TextContent(type="text", text=f"❌ Error: {result.stderr or 'Cite-Agent CLI not found. Please install it with: pip install cite-agent'}")]
-
-        return [TextContent(type="text", text=result.stdout)]
 
     except Exception as e:
         return [TextContent(type="text", text=f"❌ System Error: {str(e)}")]
