@@ -71,6 +71,20 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="research_deep_dive",
+            description="[PRO] Perform institutional-grade literature review. Synthesizes findings from 200M+ papers into a comprehensive report with citations. Use for complex research questions.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "question": {
+                        "type": "string",
+                        "description": "The complex research question to answer (e.g. 'Synthesize current research on LLM alignment techniques')",
+                    },
+                },
+                "required": ["question"],
+            },
+        ),
+        Tool(
             name="get_zotero_papers",
             description="[PRO] Search and retrieve metadata/notes from your personal Zotero library. Requires Zotero API configuration.",
             inputSchema={
@@ -148,6 +162,32 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent | ImageCo
             cmd = ["cite-agent", f"Find academic papers on: {query}. Show {max_results} results."]
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
             return [TextContent(type="text", text=result.stdout)]
+
+        elif name == "research_deep_dive":
+            # This uses the IntelligentSearch engine from the core
+            try:
+                # Add Cite-Agent core to path dynamically
+                parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+                core_path = os.path.join(parent_dir, "Cite-Agent")
+                if core_path not in sys.path:
+                    sys.path.insert(0, core_path)
+                
+                from cite_agent.enhanced_ai_agent import EnhancedNocturnalAgent, ChatRequest
+                
+                agent = EnhancedNocturnalAgent()
+                await agent.initialize()
+                
+                req = ChatRequest(question=arguments["question"])
+                response = await agent.process_request(req)
+                
+                await agent.close()
+                
+                if response.error_message:
+                    return [TextContent(type="text", text=f"❌ Agent Error: {response.error_message}")]
+                
+                return [TextContent(type="text", text=f"🧠 **Deep Research Synthesis**\n\n{response.response}")]
+            except Exception as e:
+                return [TextContent(type="text", text=f"❌ Integration Error: {str(e)}")]
 
         elif name == "get_zotero_papers":
             # This requires pyzotero and ZOTERO_API_KEY / ZOTERO_USER_ID
