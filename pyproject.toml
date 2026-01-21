@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cite-agent-mcp"
+version = "0.1.0"
+description = "Professional AI Research Assistant MCP Server with Citations"
+readme = "README.md"
+authors = [
+    { name = "Christopher Ongko", email = "chris@cite-finance.io" }
+]
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=0.1.0",
+    "httpx>=0.20.0",
+    "uvicorn>=0.20.0",
+    "starlette>=0.20.0",
+    "cite-agent>=2.0.0"
+]
+
+[project.scripts]
+cite-agent-mcp = "mcp_server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]

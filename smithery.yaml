@@ -1,0 +1,9 @@
+# Configures the deployment of cite-agent-mcp on Smithery
+runtime: "container"
+build:
+  dockerfile: "Dockerfile"
+  dockerBuildPath: "."
+startCommand:
+  name: cite-agent-mcp
+  command: "python"
+  args: ["mcp_server.py"]
